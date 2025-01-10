@@ -3,6 +3,7 @@ package com.github.nenadjakic.keeptimer
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,12 +15,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.github.nenadjakic.keeptimer.domain.entity.Project
 import com.github.nenadjakic.keeptimer.domain.entity.Timer
 import com.github.nenadjakic.keeptimer.repository.ProjectRepository
+import com.github.nenadjakic.keeptimer.service.ProjectService
 import keep_timer.composeapp.generated.resources.Res
 import keep_timer.composeapp.generated.resources.compose_multiplatform
 import org.jetbrains.compose.resources.painterResource
@@ -29,20 +32,22 @@ import org.jetbrains.compose.ui.tooling.preview.Preview
 @Preview
 fun App() {
 
-    val projectRepository = ProjectRepository()
+    val projectService = ProjectService(ProjectRepository())
     var showDialog by remember { mutableStateOf(false) }
 
     MaterialTheme {
         var showContent by remember { mutableStateOf(false) }
-        var projects by remember { mutableStateOf(projectRepository.projects) }
+        var projects by remember { mutableStateOf(projectService.findAll()) }
+        var favorites by remember { mutableStateOf(projectService.findFavorites()) }
 
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            FavoritesPanel(favorites)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
-            ){
+            ) {
                 Text("Projects", style = MaterialTheme.typography.caption)
 
                 Spacer(modifier = Modifier.height(Dp(16F)))
@@ -69,7 +74,7 @@ fun App() {
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(projects) { project ->
-                    ProjectItem(project, onEdit = { }, onDelete = { })
+                    //ProjectItem(project, onEdit = { }, onDelete = { })
                 }
             }
             AnimatedVisibility(showContent) {
@@ -142,6 +147,59 @@ fun MyModalDialog(showDialog: Boolean, project: Project, onDismiss: () -> Unit) 
             }
         }
     }
+}
+
+
+@Composable
+@Preview
+fun FavoritesPanel(favorites: MutableList<Project>) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .border(2.dp, Color.Gray)
+            .background(Color.White)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Favorites", style = MaterialTheme.typography.h6.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF6200EE),
+                    ),
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                )
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse" else "Expand"
+                    )
+                }
+            }
+
+            if (expanded) {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(favorites) { project ->
+                        ProjectItem(project, onEdit = { }, onDelete = { })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@Preview
+fun FavoriteItem() {
 }
 
 @Composable

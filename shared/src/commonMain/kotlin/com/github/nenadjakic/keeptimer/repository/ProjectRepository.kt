@@ -6,7 +6,6 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readString
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
 @Serializable
@@ -16,8 +15,8 @@ data class ProjectsData(
 )
 
 class ProjectRepository(private val fileName: String = "/tmp/projects.json") {
-    var projects: MutableList<Project> = mutableListOf()
-    var favorites: MutableSet<Long> = mutableSetOf()
+    private var projects: MutableList<Project> = mutableListOf()
+    private var favorites: MutableSet<Long> = mutableSetOf()
 
     init {
         loadProjectsFromFile()
@@ -37,5 +36,5 @@ class ProjectRepository(private val fileName: String = "/tmp/projects.json") {
 
     fun findAll() = projects
 
-    fun findFavorites() = projects.filter { it.id in favorites }
+    fun findFavorites() = projects.filter { it.id in favorites }.toMutableList()
 }
