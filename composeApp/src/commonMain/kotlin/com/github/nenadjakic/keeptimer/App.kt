@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -31,35 +32,55 @@ import org.jetbrains.compose.ui.tooling.preview.Preview
 @Composable
 @Preview
 fun App() {
-
     val projectManagementService = ProjectManagementService(ProjectManagementRepository())
-    val scrollState = rememberScrollState()
 
-    var showDialog by remember { mutableStateOf(false) }
-    var projects by remember { mutableStateOf(projectManagementService.projects) }
-    var favorites by remember { mutableStateOf(projectManagementService.findFavoriteProjects()) }
+    val scrollState = rememberScrollState()
+    var projects by remember { mutableStateOf(projectManagementService.projects.toMutableList()) }
+    var favorites by remember { mutableStateOf(projectManagementService.favorites.toMutableSet()) }
 
     MaterialTheme {
 
         Column(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            FavoritesPanel(projectManagementService)
+            FavoritesPanel(
+                projects,
+                favorites,
+                onFavoriteChange = { project, addToFavorites ->
+                    if (addToFavorites) {
+                        projectManagementService.addFavoriteProject(project.id!!)
+                    } else {
+                        projectManagementService.removeFavoriteProject(project.id!!)
+                    }
+                    favorites = projectManagementService.favorites.toMutableSet()
+                },
+            )
 
             Spacer(modifier = Modifier.height(4.dp))
 
             ProjectsPanel(
                 projects,
+                favorites,
                 onAdd = {
                     projectManagementService.saveProject(it)
+                    projects = projectManagementService.projects.toMutableList()
                 },
                 onEdit = {
                     projectManagementService.saveProject(it)
+                    projects = projectManagementService.projects.toMutableList()
                 },
                 onDelete = {
                     projectManagementService.deleteProject(it)
-                    projects = projectManagementService.projects
+                    projects = projectManagementService.projects.toMutableList()
+                },
+                onFavoriteChange = { project, addToFavorites ->
+                    if (addToFavorites) {
+                        projectManagementService.addFavoriteProject(project.id!!)
+                    } else {
+                        projectManagementService.removeFavoriteProject(project.id!!)
+                    }
+                    favorites = projectManagementService.favorites.toMutableSet()
                 },
             )
         }
@@ -164,19 +185,22 @@ fun EditProjectDialog(
 @Preview
 fun ProjectsPanel(
     projects: MutableList<Project>,
+    favorites: MutableSet<Long>,
     onAdd: (project: Project) -> Unit,
     onEdit: (project: Project) -> Unit,
-    onDelete: (id: Long) -> Unit
+    onDelete: (id: Long) -> Unit,
+    onFavoriteChange: (project: Project, addToFavorites: Boolean) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     var isDialogVisible by remember { mutableStateOf(false) }
-    var currentProjects by remember { mutableStateOf(projects) }
+    val stateProjects by rememberUpdatedState(projects)
+    val stateFavorites by rememberUpdatedState(favorites)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
-            .border(2.dp, Color.Gray)
+            .padding(4.dp)
+            .border(1.dp, Color.Gray)
             .background(Color.White)
     ) {
 
@@ -215,18 +239,21 @@ fun ProjectsPanel(
 
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.fillMaxWidth().padding(start = 32.dp)) {
-                    currentProjects.forEach { project ->
+                    stateProjects.forEach { project ->
                         ProjectItem(
                             project = project,
+                            isFavorite = stateFavorites.contains(project.id!!),
                             onEdit = {
                                 onEdit(it)
                             },
                             onDelete = {
                                 onDelete(it.id!!)
-                                currentProjects = currentProjects.filterNot { it == project }.toMutableList()
                             },
-
-                            showTimers = true
+                            showTimers = true,
+                            showCrudButtons = true,
+                            onFavoriteChange = { project, addToFavorites ->
+                                onFavoriteChange(project, addToFavorites)
+                            }
                         )
                     }
                 }
@@ -247,28 +274,33 @@ fun ProjectsPanel(
 
 @Composable
 @Preview
-fun FavoritesPanel(projectManagementService: ProjectManagementService) {
+fun FavoritesPanel(
+    projects: MutableList<Project>,
+    favorites: MutableSet<Long>,
+    onFavoriteChange: (project: Project, addToFavorites: Boolean) -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
+    val stateProjects by rememberUpdatedState(projects)
+    val stateFavorites by rememberUpdatedState(favorites)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
-            .border(2.dp, Color.Gray)
+            .padding(4.dp)
+            .border(1.dp, Color.Gray)
             .background(Color.White)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
+                    .padding(4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     "Favorites", style = MaterialTheme.typography.h6.copy(
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF6200EE),
                     ),
                     modifier = Modifier
                         .padding(start = 4.dp)
@@ -283,15 +315,19 @@ fun FavoritesPanel(projectManagementService: ProjectManagementService) {
 
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.fillMaxWidth().padding(start = 32.dp)) {
-                    projectManagementService.findFavoriteProjects().forEach { project ->
-                        ProjectItem(
-                            //projectManagementService = projectManagementService,
-                            project = project,
-                            onEdit = { },
-                            onDelete = { },
-                            showTimers = false
-                        )
-                    }
+                    stateProjects
+                        .filter { stateFavorites.contains(it.id!!) }
+                        .forEach { project ->
+                            ProjectItem(
+                                project = project,
+                                isFavorite = true,
+                                onEdit = { },
+                                onDelete = { },
+                                showTimers = false,
+                                showCrudButtons = false,
+                                onFavoriteChange = { project, add -> onFavoriteChange(project, add) }
+                            )
+                        }
                 }
             }
         }
@@ -302,9 +338,12 @@ fun FavoritesPanel(projectManagementService: ProjectManagementService) {
 @Preview
 fun ProjectItem(
     project: Project,
+    isFavorite: Boolean,
     showTimers: Boolean,
+    showCrudButtons: Boolean,
     onEdit: (project: Project) -> Unit,
-    onDelete: (project: Project) -> Unit
+    onDelete: (project: Project) -> Unit,
+    onFavoriteChange: (project: Project, add: Boolean) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var isDialogVisible by remember { mutableStateOf(false) }
@@ -315,27 +354,41 @@ fun ProjectItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(Dp(8F)),
+            .padding(Dp(4f)),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             currentProject.name,
-            color = Color.Blue,
             style = MaterialTheme.typography.subtitle1.copy(
-                color = Color.Blue,
                 fontWeight = FontWeight.Bold
             )
         )
         Row {
-            IconButton(onClick = { isDialogVisible = true }) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.Blue)
+            IconButton(onClick = {
+                onFavoriteChange(currentProject, !isFavorite)
             }
-            IconButton(onClick = { isDeleteDialogVisible = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Blue)
+            ) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarOutline,
+                    contentDescription = if (!isFavorite) "Add to favorites" else "Remove from favorites"
+                )
             }
+
+            if (showCrudButtons) {
+                IconButton(onClick = { isDialogVisible = true }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit")
+                }
+                IconButton(onClick = { isDeleteDialogVisible = true }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                }
+            }
+
             if (showTimers) {
                 IconButton(onClick = { expanded = !expanded }) {
-                    Icon(Icons.Filled.ExpandMore, contentDescription = "More", tint = Color.Blue)
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse" else "Expand"
+                    )
                 }
             }
         }
@@ -393,20 +446,18 @@ fun TimerItem(timer: Timer) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.padding(start = 16.dp)) {
+        Column(modifier = Modifier.padding(start = 8.dp)) {
             Text(
                 "Start: ${formatDateTime(timer.startTime)}", style = MaterialTheme.typography.body2.copy(
-                    color = Color.Red,
                     fontWeight = FontWeight.Medium
                 )
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 "End: ${formatDateTime(timer.endTime)}", style = MaterialTheme.typography.body2.copy(
-                    color = Color.Red,
                     fontWeight = FontWeight.Medium
                 )
             )
@@ -414,7 +465,6 @@ fun TimerItem(timer: Timer) {
             Text(
                 "Duration: ${calculateDuration(timer.startTime, timer.endTime)}",
                 style = MaterialTheme.typography.body2.copy(
-                    color = Color.Red,
                     fontWeight = FontWeight.Medium
                 )
             )
@@ -429,14 +479,12 @@ fun TimerItem(timer: Timer) {
                 Icon(
                     imageVector = Icons.Default.PlayCircle,
                     contentDescription = "Start",
-                    tint = Color.Red,
                 )
             }
             IconButton(onClick = {}) {
                 Icon(
                     imageVector = Icons.Default.StopCircle,
                     contentDescription = "Stop",
-                    tint = Color.Red,
                 )
             }
         }
