@@ -45,6 +45,7 @@ ktor-serialization-gson = { module = "io.ktor:ktor-serialization-gson-jvm", vers
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "kotlinx-material-icons" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version = "0.6.1" }
 
 
 [plugins]

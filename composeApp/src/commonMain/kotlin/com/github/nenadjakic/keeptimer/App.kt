@@ -1,12 +1,10 @@
 package com.github.nenadjakic.keeptimer
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -21,128 +19,140 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.github.nenadjakic.keeptimer.domain.entity.Project
 import com.github.nenadjakic.keeptimer.domain.entity.Timer
-import com.github.nenadjakic.keeptimer.repository.ProjectRepository
-import com.github.nenadjakic.keeptimer.service.ProjectService
-import keep_timer.composeapp.generated.resources.Res
-import keep_timer.composeapp.generated.resources.compose_multiplatform
-import org.jetbrains.compose.resources.painterResource
+import com.github.nenadjakic.keeptimer.repository.ProjectManagementRepository
+import com.github.nenadjakic.keeptimer.service.ProjectManagementService
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.ui.tooling.preview.Preview
+
 
 @Composable
 @Preview
 fun App() {
 
-    val projectService = ProjectService(ProjectRepository())
+    val projectManagementService = ProjectManagementService(ProjectManagementRepository())
+    val scrollState = rememberScrollState()
+
     var showDialog by remember { mutableStateOf(false) }
+    var projects by remember { mutableStateOf(projectManagementService.projects) }
+    var favorites by remember { mutableStateOf(projectManagementService.findFavoriteProjects()) }
 
     MaterialTheme {
-        var showContent by remember { mutableStateOf(false) }
-        var projects by remember { mutableStateOf(projectService.findAll()) }
-        var favorites by remember { mutableStateOf(projectService.findFavorites()) }
 
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            FavoritesPanel(favorites)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Projects", style = MaterialTheme.typography.caption)
+        Column(
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            FavoritesPanel(projectManagementService)
 
-                Spacer(modifier = Modifier.height(Dp(16F)))
+            Spacer(modifier = Modifier.height(4.dp))
 
-                IconButton(onClick = { }) {
-                    Icon(Icons.Default.Stop, contentDescription = "Add")
-                }
-
-            }
-
-            Spacer(modifier = Modifier.height(Dp(16F)))
-
-            Button(onClick = { showDialog = true }) {
-                Text("Show Dialog")
-            }
-
-            MyModalDialog(
-                showDialog = showDialog,
-                project = projects[0],
-                onDismiss = { showDialog = false }
+            ProjectsPanel(
+                projects,
+                onAdd = {
+                    projectManagementService.saveProject(it)
+                },
+                onEdit = {
+                    projectManagementService.saveProject(it)
+                },
+                onDelete = {
+                    projectManagementService.deleteProject(it)
+                    projects = projectManagementService.projects
+                },
             )
-
-            Spacer(modifier = Modifier.height(Dp(8F)))
-
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(projects) { project ->
-                    //ProjectItem(project, onEdit = { }, onDelete = { })
-                }
-            }
-            AnimatedVisibility(showContent) {
-                val greeting = remember { Greeting().greet() }
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Image(painterResource(Res.drawable.compose_multiplatform), null)
-                    Text("Compose: $greeting")
-                }
-            }
         }
     }
 }
 
+
 @Composable
 @Preview
-fun MyModalDialog(showDialog: Boolean, project: Project, onDismiss: () -> Unit) {
+fun EditProjectDialog(
+    showDialog: Boolean,
+    project: Project?,
+    onDismiss: () -> Unit,
+    onSave: (Project) -> Unit
+) {
     if (showDialog) {
         Dialog(onDismissRequest = { onDismiss() }) {
             Box(
                 modifier = Modifier
-                    .size(300.dp, 200.dp)
-                    .background(color = Color.White, shape = RoundedCornerShape(12.dp))
+                    .fillMaxWidth(0.85f)
+                    .background(
+                        color = Color.White,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .padding(16.dp)
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
                         .padding(16.dp),
                     verticalArrangement = Arrangement.SpaceBetween,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    var editableName by remember { mutableStateOf(project.name) }
+                    var editableName by remember { mutableStateOf(project?.name ?: "") }
+                    var isNameEmpty by remember { mutableStateOf(false) }
+                    var showWarning by remember { mutableStateOf(false) }
 
                     Text(
-                        text = "Edit Project",
-                        style = MaterialTheme.typography.body1,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        text = if (project == null) "Add New Project" else "Edit Project",
+                        style = MaterialTheme.typography.h6.copy(color = Color(0xFF6200EE)),
+                        modifier = Modifier.padding(bottom = 16.dp),
                     )
 
                     TextField(
                         value = editableName,
-                        onValueChange = { editableName = it },
-                        label = { Text("Name") },
+                        onValueChange = {
+                            editableName = it
+                            isNameEmpty = it.isEmpty()
+                            showWarning = false
+                        },
+                        label = { Text("Project Name") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.textFieldColors(
+                            backgroundColor = Color(0xFFF5F5F5),
+                            focusedIndicatorColor = Color(0xFF6200EE),
+                            unfocusedIndicatorColor = Color.Gray
+                        )
                     )
 
-                    // Update the project's name when the dialog is dismissed
-                    DisposableEffect(Unit) {
-                        onDispose {
-                            project.name = editableName
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Row(
-                        modifier = Modifier.fillMaxHeight().padding(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Button(onClick = onDismiss) {
-                            Text("Cancel")
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color.Gray)
+                        ) {
+                            Text("Cancel", color = Color.White)
                         }
 
                         Spacer(modifier = Modifier.width(16.dp))
 
-                        Button(onClick = {}) {
-                            Text("Save")
+                        Button(
+                            onClick = {
+                                val updatedProject =
+                                    project?.copy(name = editableName) ?: Project(
+                                        id = Clock.System.now().toEpochMilliseconds(), name = editableName
+                                    )
+                                onSave(updatedProject)
+
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF6200EE)),
+                            enabled = editableName.isNotBlank()
+                        ) {
+                            Text("Save", color = Color.White)
                         }
                     }
-
                 }
             }
         }
@@ -152,7 +162,92 @@ fun MyModalDialog(showDialog: Boolean, project: Project, onDismiss: () -> Unit) 
 
 @Composable
 @Preview
-fun FavoritesPanel(favorites: MutableList<Project>) {
+fun ProjectsPanel(
+    projects: MutableList<Project>,
+    onAdd: (project: Project) -> Unit,
+    onEdit: (project: Project) -> Unit,
+    onDelete: (id: Long) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var isDialogVisible by remember { mutableStateOf(false) }
+    var currentProjects by remember { mutableStateOf(projects) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .border(2.dp, Color.Gray)
+            .background(Color.White)
+    ) {
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Projects", style = MaterialTheme.typography.h6.copy(
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { isDialogVisible = true }) {
+                        Icon(Icons.Default.AddCircle, contentDescription = "Add")
+                    }
+
+                    IconButton(onClick = { expanded = !expanded }) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (expanded) "Collapse" else "Expand"
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.fillMaxWidth().padding(start = 32.dp)) {
+                    currentProjects.forEach { project ->
+                        ProjectItem(
+                            project = project,
+                            onEdit = {
+                                onEdit(it)
+                            },
+                            onDelete = {
+                                onDelete(it.id!!)
+                                currentProjects = currentProjects.filterNot { it == project }.toMutableList()
+                            },
+
+                            showTimers = true
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    EditProjectDialog(
+        showDialog = isDialogVisible,
+        project = null,
+        onDismiss = { isDialogVisible = false },
+        onSave = {
+            onAdd(it)
+            isDialogVisible = false
+        }
+    )
+}
+
+@Composable
+@Preview
+fun FavoritesPanel(projectManagementService: ProjectManagementService) {
     var expanded by remember { mutableStateOf(false) }
 
     Box(
@@ -186,10 +281,16 @@ fun FavoritesPanel(favorites: MutableList<Project>) {
                 }
             }
 
-            if (expanded) {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(favorites) { project ->
-                        ProjectItem(project, onEdit = { }, onDelete = { })
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.fillMaxWidth().padding(start = 32.dp)) {
+                    projectManagementService.findFavoriteProjects().forEach { project ->
+                        ProjectItem(
+                            //projectManagementService = projectManagementService,
+                            project = project,
+                            onEdit = { },
+                            onDelete = { },
+                            showTimers = false
+                        )
                     }
                 }
             }
@@ -199,41 +300,95 @@ fun FavoritesPanel(favorites: MutableList<Project>) {
 
 @Composable
 @Preview
-fun FavoriteItem() {
-}
+fun ProjectItem(
+    project: Project,
+    showTimers: Boolean,
+    onEdit: (project: Project) -> Unit,
+    onDelete: (project: Project) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var isDialogVisible by remember { mutableStateOf(false) }
+    var isDeleteDialogVisible by remember { mutableStateOf(false) }
 
-@Composable
-@Preview
-fun ProjectItem(project: Project, onEdit: () -> Unit, onDelete: () -> Unit) {
+    var currentProject by remember { mutableStateOf(project) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(Dp(8F)),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(project.name)
+        Text(
+            currentProject.name,
+            color = Color.Blue,
+            style = MaterialTheme.typography.subtitle1.copy(
+                color = Color.Blue,
+                fontWeight = FontWeight.Bold
+            )
+        )
         Row {
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit")
+            IconButton(onClick = { isDialogVisible = true }) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.Blue)
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete")
+            IconButton(onClick = { isDeleteDialogVisible = true }) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Blue)
             }
-            IconButton(onClick = {}) {
-                Icon(Icons.Filled.ExpandMore, contentDescription = "More")
+            if (showTimers) {
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(Icons.Filled.ExpandMore, contentDescription = "More", tint = Color.Blue)
+                }
             }
         }
     }
-    AnimatedVisibility(true) {
-        Column(modifier = Modifier.padding(start = 16.dp)) {
-            project.timers.forEach { timer ->
+    AnimatedVisibility(visible = expanded) {
+        Column(modifier = Modifier.padding(start = 32.dp)) {
+            currentProject.timers.forEach { timer ->
                 TimerItem(timer = timer)
             }
         }
     }
+
+    EditProjectDialog(
+        showDialog = isDialogVisible,
+        project = currentProject,
+        onDismiss = { isDialogVisible = false },
+        onSave = {
+            onEdit(it)
+            currentProject = it
+            isDialogVisible = false
+        }
+    )
+
+    if (isDeleteDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { isDeleteDialogVisible = false },
+            title = {
+                Text(text = "Are you sure you want to delete project with name ${currentProject.name}?")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete(currentProject)
+                        isDeleteDialogVisible = false
+                    }
+                ) {
+                    Text("Yes")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { isDeleteDialogVisible = false }
+                ) {
+                    Text("No")
+                }
+            }
+        )
+    }
 }
 
+
 @Composable
+@Preview
 fun TimerItem(timer: Timer) {
     Row(
         modifier = Modifier
@@ -241,15 +396,72 @@ fun TimerItem(timer: Timer) {
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(timer.startTime.toString(), style = MaterialTheme.typography.body2)
-        Text(timer.endTime.toString(), style = MaterialTheme.typography.body2)
+        Column(modifier = Modifier.padding(start = 16.dp)) {
+            Text(
+                "Start: ${formatDateTime(timer.startTime)}", style = MaterialTheme.typography.body2.copy(
+                    color = Color.Red,
+                    fontWeight = FontWeight.Medium
+                )
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "End: ${formatDateTime(timer.endTime)}", style = MaterialTheme.typography.body2.copy(
+                    color = Color.Red,
+                    fontWeight = FontWeight.Medium
+                )
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Duration: ${calculateDuration(timer.startTime, timer.endTime)}",
+                style = MaterialTheme.typography.body2.copy(
+                    color = Color.Red,
+                    fontWeight = FontWeight.Medium
+                )
+            )
 
-        IconButton(onClick = { }) {
-            Icon(Icons.Default.PlayCircle, contentDescription = "Start")
         }
-        //implementation(libs.androidx.material.icons.extended)
-        IconButton(onClick = { }) {
-            Icon(Icons.Default.StopCircle, contentDescription = "Stop")
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = {}) {
+                Icon(
+                    imageVector = Icons.Default.PlayCircle,
+                    contentDescription = "Start",
+                    tint = Color.Red,
+                )
+            }
+            IconButton(onClick = {}) {
+                Icon(
+                    imageVector = Icons.Default.StopCircle,
+                    contentDescription = "Stop",
+                    tint = Color.Red,
+                )
+            }
         }
     }
+}
+
+fun formatDateTime(timeInMillis: Long): String {
+    val instant = Instant.fromEpochMilliseconds(timeInMillis)
+    val dateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+
+    return dateTime.toString()
+}
+
+fun calculateDuration(startTime: Long, endTime: Long?): String {
+    if (endTime == null) {
+        return "NaN"
+    }
+    val startInstant = Instant.fromEpochMilliseconds(startTime)
+    val endInstant = Instant.fromEpochMilliseconds(endTime)
+
+    val durationInSeconds = (endInstant.toEpochMilliseconds() - startInstant.toEpochMilliseconds()) / 1000
+
+    val hours = durationInSeconds / 3600
+    val minutes = (durationInSeconds % 3600) / 60
+    val seconds = durationInSeconds % 60
+
+    return "$hours:$minutes:$seconds"
 }

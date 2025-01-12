@@ -1,11 +1,11 @@
 package com.github.nenadjakic.keeptimer.repository
 
-import com.github.nenadjakic.keeptimer.domain.dto.RepoData
 import com.github.nenadjakic.keeptimer.domain.entity.Project
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readString
+import kotlinx.io.writeString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -15,9 +15,10 @@ data class ProjectsData(
     val favorites: List<Long>
 )
 
-class ProjectRepository(filePath: String = "/tmp/projects.json"): AbstractSerializableStore<RepoData>(Path(filePath)) {
+class ProjectManagementRepository(filePath: String = "/tmp/projects.json") {
     private var projects: MutableList<Project> = mutableListOf()
     private var favorites: MutableSet<Long> = mutableSetOf()
+    private val path = Path(filePath)
 
     init {
         loadProjectsFromFile()
@@ -35,7 +36,7 @@ class ProjectRepository(filePath: String = "/tmp/projects.json"): AbstractSerial
 
     fun findAll() = projects
 
-    fun findFavorites() = projects.filter { it.id in favorites }.toMutableList()
+    fun findFavorites() = favorites
 
     fun save(project: Project) {
         val index = projects.indexOfFirst { it.id == project.id }
@@ -65,5 +66,15 @@ class ProjectRepository(filePath: String = "/tmp/projects.json"): AbstractSerial
             favorites.remove(projectId)
             flush()
         }
+    }
+
+    private fun flush() {
+        val data = ProjectsData(
+            projects = projects,
+            favorites = favorites.toList()
+        )
+
+        val jsonData = Json { prettyPrint = true }.encodeToString(data)
+        SystemFileSystem.sink(path).buffered().use { it.writeString(jsonData) }
     }
 }
