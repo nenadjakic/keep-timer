@@ -1,5 +1,6 @@
 package com.github.nenadjakic.keeptimer.repository
 
+import com.github.nenadjakic.keeptimer.domain.dto.RepoData
 import com.github.nenadjakic.keeptimer.domain.entity.Project
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
@@ -14,7 +15,7 @@ data class ProjectsData(
     val favorites: List<Long>
 )
 
-class ProjectRepository(private val fileName: String = "/tmp/projects.json") {
+class ProjectRepository(filePath: String = "/tmp/projects.json"): AbstractSerializableStore<RepoData>(Path(filePath)) {
     private var projects: MutableList<Project> = mutableListOf()
     private var favorites: MutableSet<Long> = mutableSetOf()
 
@@ -23,8 +24,6 @@ class ProjectRepository(private val fileName: String = "/tmp/projects.json") {
     }
 
     private fun loadProjectsFromFile() {
-        val path = Path(fileName)
-
         if (SystemFileSystem.exists(path)) {
             val source = SystemFileSystem.source(path)
             val jsonData = source.buffered().readString()
@@ -37,4 +36,34 @@ class ProjectRepository(private val fileName: String = "/tmp/projects.json") {
     fun findAll() = projects
 
     fun findFavorites() = projects.filter { it.id in favorites }.toMutableList()
+
+    fun save(project: Project) {
+        val index = projects.indexOfFirst { it.id == project.id }
+        if (index == -1) {
+            projects.add(project)
+        } else {
+            projects[index] = project
+        }
+        flush()
+    }
+
+    fun deleteProject(projectId: Long) {
+        projects.removeAll { it.id == projectId }
+        favorites.remove(projectId)
+        flush()
+    }
+
+    fun addToFavorites(projectId: Long) {
+        if (projects.any { it.id == projectId }) {
+            favorites.add(projectId)
+            flush()
+        }
+    }
+
+    fun removeFromFavorites(projectId: Long) {
+        if (favorites.contains(projectId)) {
+            favorites.remove(projectId)
+            flush()
+        }
+    }
 }
