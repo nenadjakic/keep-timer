@@ -22,11 +22,13 @@ import com.github.nenadjakic.keeptimer.domain.entity.Project
 import com.github.nenadjakic.keeptimer.domain.entity.Timer
 import com.github.nenadjakic.keeptimer.repository.ProjectManagementRepository
 import com.github.nenadjakic.keeptimer.service.ProjectManagementService
+import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.ui.tooling.preview.Preview
+
 
 
 @Composable
@@ -35,7 +37,8 @@ fun App() {
     val projectManagementService = ProjectManagementService(ProjectManagementRepository())
 
     val scrollState = rememberScrollState()
-    var projects by remember { mutableStateOf(projectManagementService.projects.toMutableList()) }
+    val _projects = projectManagementService.projects.toList()
+    val projects = remember { mutableStateOf(_projects) }
     var favorites by remember { mutableStateOf(projectManagementService.favorites.toMutableSet()) }
 
     MaterialTheme {
@@ -44,6 +47,7 @@ fun App() {
             Modifier.fillMaxWidth().verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            /*
             FavoritesPanel(
                 projects,
                 favorites,
@@ -56,23 +60,24 @@ fun App() {
                     favorites = projectManagementService.favorites.toMutableSet()
                 },
             )
+            */
 
             Spacer(modifier = Modifier.height(4.dp))
 
             ProjectsPanel(
-                projects,
+                _projects.toMutableList(),
                 favorites,
                 onAdd = {
                     projectManagementService.saveProject(it)
-                    projects = projectManagementService.projects.toMutableList()
+                    projects.value = projectManagementService.projects.toMutableList()
                 },
                 onEdit = {
                     projectManagementService.saveProject(it)
-                    projects = projectManagementService.projects.toMutableList()
+                    projects.value = projectManagementService.projects.toMutableList()
                 },
                 onDelete = {
                     projectManagementService.deleteProject(it)
-                    projects = projectManagementService.projects.toMutableList()
+                    projects.value = projectManagementService.projects.toMutableList()
                 },
                 onFavoriteChange = { project, addToFavorites ->
                     if (addToFavorites) {
@@ -82,6 +87,15 @@ fun App() {
                     }
                     favorites = projectManagementService.favorites.toMutableSet()
                 },
+                onTimerStart = {
+                    var timer = projectManagementService.startTimerForProject(it.id!!)
+                    projects.value = projectManagementService.projects.toMutableList()
+                    return@ProjectsPanel timer
+                },
+                onTimerStop = { project ->
+                    projectManagementService.saveProject(project)
+                    projects.value = projectManagementService.projects.toMutableList()
+                }
             )
         }
     }
@@ -184,16 +198,18 @@ fun EditProjectDialog(
 @Composable
 @Preview
 fun ProjectsPanel(
-    projects: MutableList<Project>,
+    projects: List<Project>,
     favorites: MutableSet<Long>,
     onAdd: (project: Project) -> Unit,
     onEdit: (project: Project) -> Unit,
     onDelete: (id: Long) -> Unit,
-    onFavoriteChange: (project: Project, addToFavorites: Boolean) -> Unit
+    onFavoriteChange: (project: Project, addToFavorites: Boolean) -> Unit,
+    onTimerStart: (project: Project) -> Timer,
+    onTimerStop: (project: Project) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     var isDialogVisible by remember { mutableStateOf(false) }
-    val stateProjects by rememberUpdatedState(projects)
+    //val stateProjects by remember { mutableStateOf(projects) }
     val stateFavorites by rememberUpdatedState(favorites)
 
     Box(
@@ -239,7 +255,7 @@ fun ProjectsPanel(
 
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.fillMaxWidth().padding(start = 32.dp)) {
-                    stateProjects.forEach { project ->
+                    projects.forEach { project ->
                         ProjectItem(
                             project = project,
                             isFavorite = stateFavorites.contains(project.id!!),
@@ -251,10 +267,20 @@ fun ProjectsPanel(
                             },
                             showTimers = true,
                             showCrudButtons = true,
+                            showTimerButtons = true,
                             onFavoriteChange = { project, addToFavorites ->
                                 onFavoriteChange(project, addToFavorites)
+                            },
+                            onTimerStart = {
+                                val timer = onTimerStart(project)
+                                expanded = false
+                                return@ProjectItem timer
+                            },
+                            onTimerStop = {
+                                onTimerStop(project)
                             }
                         )
+                        Divider()
                     }
                 }
             }
@@ -271,7 +297,7 @@ fun ProjectsPanel(
         }
     )
 }
-
+/*
 @Composable
 @Preview
 fun FavoritesPanel(
@@ -325,6 +351,7 @@ fun FavoritesPanel(
                                 onDelete = { },
                                 showTimers = false,
                                 showCrudButtons = false,
+                                showTimerButtons = true,
                                 onFavoriteChange = { project, add -> onFavoriteChange(project, add) }
                             )
                         }
@@ -333,7 +360,7 @@ fun FavoritesPanel(
         }
     }
 }
-
+*/
 @Composable
 @Preview
 fun ProjectItem(
@@ -341,15 +368,21 @@ fun ProjectItem(
     isFavorite: Boolean,
     showTimers: Boolean,
     showCrudButtons: Boolean,
+    showTimerButtons: Boolean,
     onEdit: (project: Project) -> Unit,
     onDelete: (project: Project) -> Unit,
     onFavoriteChange: (project: Project, add: Boolean) -> Unit,
+    onTimerStart: (project: Project) -> Timer,
+    onTimerStop: (project: Project) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var isDialogVisible by remember { mutableStateOf(false) }
     var isDeleteDialogVisible by remember { mutableStateOf(false) }
 
     var currentProject by remember { mutableStateOf(project) }
+    var runningTimer: Timer? by remember { mutableStateOf(currentProject.timers.find { it.endTime == null }) }
+
+    var timerStarted by remember { mutableStateOf(runningTimer != null) }
 
     Row(
         modifier = Modifier
@@ -383,6 +416,44 @@ fun ProjectItem(
                 }
             }
 
+            if (showTimerButtons) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (!timerStarted) {
+                                runningTimer = onTimerStart(currentProject)
+                                onTimerStart(currentProject)
+                                timerStarted = true
+                            }
+                        },
+                        enabled = !timerStarted
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayCircle,
+                            contentDescription = "Start",
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            runningTimer!!.endTime = Clock.System.now().toEpochMilliseconds()
+                            onEdit(currentProject)
+                            onTimerStop(currentProject)
+                            runningTimer = null
+                            timerStarted = false
+                        },
+                        enabled = timerStarted
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.StopCircle,
+                            contentDescription = "Stop",
+                        )
+                    }
+                }
+            }
+
             if (showTimers) {
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(
@@ -396,7 +467,8 @@ fun ProjectItem(
     AnimatedVisibility(visible = expanded) {
         Column(modifier = Modifier.padding(start = 32.dp)) {
             currentProject.timers.forEach { timer ->
-                TimerItem(timer = timer)
+                TimerItem(timer, showTimerButtons)
+                Divider()
             }
         }
     }
@@ -439,14 +511,27 @@ fun ProjectItem(
     }
 }
 
-
 @Composable
 @Preview
-fun TimerItem(timer: Timer) {
+fun TimerItem(
+    timer: Timer,
+    showTimerButtons: Boolean
+) {
+    var timerStarted by remember { mutableStateOf(timer.endTime == null) }
+    var currentDuration by remember { mutableStateOf(calculateDuration(timer.startTime, timer.endTime)) }
+
+    LaunchedEffect(timerStarted) {
+        while (timerStarted) {
+            currentDuration = calculateDuration(timer.startTime, timer.endTime)
+            delay(1000L)
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .padding(2.dp)
+            .background(if (timer.endTime == null) Color.LightGray else Color.Transparent),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column(modifier = Modifier.padding(start = 8.dp)) {
@@ -457,36 +542,17 @@ fun TimerItem(timer: Timer) {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                "End: ${formatDateTime(timer.endTime)}", style = MaterialTheme.typography.body2.copy(
+                "End: ${if (timer.endTime != null) formatDateTime(timer.endTime!!) else "" }", style = MaterialTheme.typography.body2.copy(
                     fontWeight = FontWeight.Medium
                 )
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                "Duration: ${calculateDuration(timer.startTime, timer.endTime)}",
+                "Duration: $currentDuration",
                 style = MaterialTheme.typography.body2.copy(
                     fontWeight = FontWeight.Medium
                 )
             )
-
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {}) {
-                Icon(
-                    imageVector = Icons.Default.PlayCircle,
-                    contentDescription = "Start",
-                )
-            }
-            IconButton(onClick = {}) {
-                Icon(
-                    imageVector = Icons.Default.StopCircle,
-                    contentDescription = "Stop",
-                )
-            }
         }
     }
 }
@@ -499,12 +565,13 @@ fun formatDateTime(timeInMillis: Long): String {
 }
 
 fun calculateDuration(startTime: Long, endTime: Long?): String {
-    if (endTime == null) {
-        return "NaN"
+    val endInstant = if (endTime == null) {
+        Instant.fromEpochMilliseconds(Clock.System.now().toEpochMilliseconds())
+    } else {
+        Instant.fromEpochMilliseconds(endTime)
     }
-    val startInstant = Instant.fromEpochMilliseconds(startTime)
-    val endInstant = Instant.fromEpochMilliseconds(endTime)
 
+    val startInstant = Instant.fromEpochMilliseconds(startTime)
     val durationInSeconds = (endInstant.toEpochMilliseconds() - startInstant.toEpochMilliseconds()) / 1000
 
     val hours = durationInSeconds / 3600
@@ -513,3 +580,5 @@ fun calculateDuration(startTime: Long, endTime: Long?): String {
 
     return "$hours:$minutes:$seconds"
 }
+
+fun hasStartedTimer(project: Project): Boolean = project.timers.isNotEmpty() && project.timers.any { it.endTime == null }

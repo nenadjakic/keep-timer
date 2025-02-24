@@ -1,6 +1,7 @@
 package com.github.nenadjakic.keeptimer.repository
 
 import com.github.nenadjakic.keeptimer.domain.entity.Project
+import com.github.nenadjakic.keeptimer.domain.entity.Timer
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -38,7 +39,17 @@ class ProjectManagementRepository(filePath: String = "/tmp/projects.json") {
 
     fun findFavorites() = favorites
 
-    fun save(project: Project) {
+    fun saveAndFlushProject(project: Project) {
+        val index = projects.indexOfFirst { it.id == project.id }
+        if (index == -1) {
+            projects.add(project)
+        } else {
+            projects[index] = project
+        }
+        flush()
+    }
+
+    fun saveProject(project: Project) {
         val index = projects.indexOfFirst { it.id == project.id }
         if (index == -1) {
             projects.add(project)
@@ -68,7 +79,15 @@ class ProjectManagementRepository(filePath: String = "/tmp/projects.json") {
         }
     }
 
-    private fun flush() {
+    fun findRunningTimerForProject(projectId: Long): Timer? =
+        projects
+            .filter { it.id == projectId }
+            .flatMap { it.timers }
+            .filter { it.endTime == null }
+            .firstOrNull()
+
+
+    fun flush() {
         val data = ProjectsData(
             projects = projects,
             favorites = favorites.toList()
